@@ -31,14 +31,6 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install --force-reinstall --no-deps opencv-python==4.14.0.94
 
-      - name: Patch source for China network (hf-mirror fallback)
-        shell: bash
-        run: |
-          # Replace huggingface.co with hf-mirror.com as primary download URL
-          sed -i 's|https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx|https://hf-mirror.com/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx\n            https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx|' modules/processors/frame/face_swapper.py
-          echo "--- face_swapper.py patch applied ---"
-          grep -n "hf-mirror\|huggingface" modules/processors/frame/face_swapper.py || true
-
       - name: Pre-download AI model (inswapper_128.onnx ~554MB)
         shell: bash
         run: |
