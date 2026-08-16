@@ -1,0 +1,82 @@
+name: Build Windows Installer
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish to GitHub Release'
+        required: false
+        default: 'false'
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tooling
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Install project dependencies
+        shell: bash
+        run: |
+          # Deep-Live-Cam 同时依赖 opencv-python 与 opencv-python-headless，二者都会写入
+          # site-packages/cv2，最后安装的覆盖前者。为保证 GUI 可用，先装 headless 再强制
+          # 重装带 GUI 的 opencv-python 作为最终状态。
+          python -m pip install -r requirements.txt
+          python -m pip install --force-reinstall --no-deps opencv-python==4.14.0.94
+
+      - name: Build executable (onedir)
+        shell: bash
+        run: |
+          python -m PyInstaller --noconfirm --onedir --windowed \
+            --name "DeepLiveCam" \
+            --add-data "modules;modules" \
+            --add-data "locales;locales" \
+            --add-data "media;media" \
+            --hidden-import=insightface \
+            --hidden-import=onnxruntime \
+            --hidden-import=onnxruntime_providers_cuda \
+            --hidden-import=onnxruntime_providers_dml \
+            --hidden-import=onnxruntime_providers_openvino \
+            --hidden-import=opennsfw2 \
+            --hidden-import=keras \
+            --hidden-import=PySide6.QtCore \
+            --hidden-import=PySide6.QtGui \
+            --hidden-import=PySide6.QtWidgets \
+            --hidden-import=PySide6.QtNetwork \
+            --collect-all insightface \
+            --collect-all onnxruntime \
+            run.py
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Compile installer
+        shell: bash
+        run: |
+          export PATH="$PATH:/c/Program Files (x86)/NSIS"
+          makensis installer.nsi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: "Deep-Live-Cam_installer.exe"
+          if-no-files-found: error
+
+      - name: Publish Release
+        if: ${{ github.event.inputs.publish_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "Deep-Live-Cam_installer.exe"
+          tag_name: installer-build
+          name: Windows Installer Build
