@@ -28,13 +28,31 @@ jobs:
       - name: Install project dependencies
         shell: bash
         run: |
-          # Deep-Live-Cam 同时依赖 opencv-python 与 opencv-python-headless，二者都会写入
-          # site-packages/cv2，最后安装的覆盖前者。为保证 GUI 可用，先装 headless 再强制
-          # 重装带 GUI 的 opencv-python 作为最终状态。
           python -m pip install -r requirements.txt
           python -m pip install --force-reinstall --no-deps opencv-python==4.14.0.94
 
-      - name: Build executable (onedir)
+      - name: Patch source for China network (hf-mirror fallback)
+        shell: bash
+        run: |
+          # Replace huggingface.co with hf-mirror.com as primary download URL
+          sed -i 's|https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx|https://hf-mirror.com/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx\n            https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx|' modules/processors/frame/face_swapper.py
+          echo "--- face_swapper.py patch applied ---"
+          grep -n "hf-mirror\|huggingface" modules/processors/frame/face_swapper.py || true
+
+      - name: Pre-download AI model (inswapper_128.onnx ~554MB)
+        shell: bash
+        run: |
+          mkdir -p models
+          echo "Downloading inswapper_128.onnx from hf-mirror (China-friendly)..."
+          curl -L -f --connect-timeout 30 --max-time 600 -o models/inswapper_128.onnx \
+            "https://hf-mirror.com/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx"
+          echo "Model size: $(ls -la models/inswapper_128.onnx | awk '{print $5}') bytes"
+          if [ ! -s models/inswapper_128.onnx ]; then
+            echo "ERROR: Model download failed or file is empty"
+            exit 1
+          fi
+
+      - name: Build executable (onedir + bundled model)
         shell: bash
         run: |
           python -m PyInstaller --noconfirm --onedir --windowed \
@@ -42,6 +60,7 @@ jobs:
             --add-data "modules;modules" \
             --add-data "locales;locales" \
             --add-data "media;media" \
+            --add-data "models;models" \
             --hidden-import=insightface \
             --hidden-import=onnxruntime \
             --hidden-import=onnxruntime_providers_cuda \
@@ -56,6 +75,16 @@ jobs:
             --collect-all insightface \
             --collect-all onnxruntime \
             run.py
+
+      - name: Verify model is bundled
+        shell: bash
+        run: |
+          if [ -f dist/DeepLiveCam/models/inswapper_128.onnx ]; then
+            echo "Model bundled OK ($(ls -la dist/DeepLiveCam/models/inswapper_128.onnx | awk '{print $5}') bytes)"
+          else
+            echo "WARNING: Model not found in dist — app will try downloading at runtime"
+            find dist/DeepLiveCam -name "*.onnx" 2>/dev/null | head -5 || true
+          fi
 
       - name: Install NSIS
         run: choco install nsis -y
