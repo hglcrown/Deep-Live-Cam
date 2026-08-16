@@ -282,34 +282,44 @@ def is_video(video_path: str) -> bool:
 def conditional_download(download_directory_path: str, urls: List[str]) -> None:
     if not os.path.exists(download_directory_path):
         os.makedirs(download_directory_path)
+    last_error = None
     for url in urls:
         download_file_path = os.path.join(
             download_directory_path, os.path.basename(url)
         )
         if not os.path.exists(download_file_path):
-            request = urllib.request.Request(url)
-            
-            # Create a specific SSL context for macOS to avoid globally disabling verification
-            ctx = None
-            if platform.system().lower() == "darwin":
-                ctx = ssl._create_unverified_context()
-                
-            response = urllib.request.urlopen(request, context=ctx)
-            total = int(response.headers.get("Content-Length", 0))
-            with tqdm(
-                total=total,
-                desc="Downloading",
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-            ) as progress:
-                with open(download_file_path, "wb") as f:
-                    while True:
-                        buffer = response.read(8192)
-                        if not buffer:
-                            break
-                        f.write(buffer)
-                        progress.update(len(buffer))
+            try:
+                request = urllib.request.Request(url)
+
+                # Create a specific SSL context for macOS to avoid globally disabling verification
+                ctx = None
+                if platform.system().lower() == "darwin":
+                    ctx = ssl._create_unverified_context()
+
+                response = urllib.request.urlopen(request, context=ctx, timeout=120)
+                total = int(response.headers.get("Content-Length", 0))
+                with tqdm(
+                    total=total,
+                    desc="Downloading",
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as progress:
+                    with open(download_file_path, "wb") as f:
+                        while True:
+                            buffer = response.read(8192)
+                            if not buffer:
+                                break
+                            f.write(buffer)
+                            progress.update(len(buffer))
+                return  # success on first working URL
+            except Exception as e:
+                last_error = e
+                print(f"Download failed from {url}: {e}, trying next URL...")
+                if os.path.exists(download_file_path):
+                    os.remove(download_file_path)  # clean partial
+    if last_error is not None:
+        raise RuntimeError(f"All download URLs failed. Last error: {last_error}") from last_error
 
 
 def resolve_relative_path(path: str) -> str:
