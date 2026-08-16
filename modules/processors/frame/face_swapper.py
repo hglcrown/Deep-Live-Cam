@@ -200,10 +200,11 @@ def pre_check() -> bool:
         logging.error(f"Failed to create directory {download_directory_path} due to permission error: {e}")
         return False
     
-    # Use the direct download URL from Hugging Face (FP32 model for broad GPU compatibility)
+    # Use hf-mirror.com for China accessibility (primary), with HuggingFace as fallback
     conditional_download(
         download_directory_path,
         [
+            "https://hf-mirror.com/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx",
             "https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx"
         ],
     )
